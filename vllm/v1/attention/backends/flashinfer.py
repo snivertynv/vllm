@@ -398,8 +398,28 @@ class FlashInferBackend(AttentionBackend):
 
     @classmethod
     def get_supported_head_sizes(cls) -> list[int]:
-        # https://github.com/flashinfer-ai/flashinfer/blob/3d55c71a62052c590c130897d3a3db49b14fcc34/include/flashinfer/utils.cuh#L157
-        return [64, 128, 256]
+        # FlashInfer native kernels support 64, 128, and 256. TRTLLM
+        # kernels add 512 support for the Blackwell/SM100 family.
+        return [64, 128, 256, 512]
+
+    @classmethod
+    def supports_combination(
+        cls,
+        head_size: int,
+        dtype: torch.dtype,
+        kv_cache_dtype: CacheDType | None,
+        block_size: int | None,
+        use_mla: bool,
+        has_sink: bool,
+        use_sparse: bool,
+        device_capability: DeviceCapability,
+    ) -> str | None:
+        if head_size == 512 and device_capability.major != 10:
+            return (
+                "head_size=512 is only supported by FlashInfer TRTLLM "
+                "attention on Blackwell GPUs (SM100 family)"
+            )
+        return None
 
     @classmethod
     def supports_compute_capability(cls, capability: DeviceCapability) -> bool:

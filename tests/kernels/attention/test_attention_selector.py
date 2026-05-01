@@ -14,6 +14,7 @@ from vllm.config import (
 )
 from vllm.platforms import current_platform
 from vllm.platforms.cpu import CpuPlatform
+from vllm.platforms.interface import DeviceCapability
 
 # CudaPlatform and RocmPlatform import their respective compiled C extensions
 # at module level, raising ModuleNotFoundError on incompatible builds.
@@ -315,6 +316,40 @@ def test_flash_attn(monkeypatch: pytest.MonkeyPatch):
         # Unsupported head size
         backend = get_attn_backend(17, torch.float16, None)
         assert backend.get_name() != "FLASH_ATTN"
+
+
+def test_flashinfer_head_size_512_requires_blackwell():
+    """FlashInfer head_size=512 is provided by TRTLLM kernels on CUDA 10.x."""
+    try:
+        from vllm.v1.attention.backends.flashinfer import FlashInferBackend
+    except ImportError:
+        pytest.skip("FlashInfer not available")
+
+    assert 512 in FlashInferBackend.get_supported_head_sizes()
+
+    common_kwargs = dict(
+        head_size=512,
+        dtype=torch.float16,
+        kv_cache_dtype=None,
+        block_size=16,
+        use_mla=False,
+        has_sink=False,
+        use_sparse=False,
+        use_mm_prefix=False,
+        use_per_head_quant_scales=False,
+        attn_type="decoder",
+    )
+
+    assert "Blackwell" in " ".join(
+        FlashInferBackend.validate_configuration(
+            **common_kwargs,
+            device_capability=DeviceCapability(9, 0),
+        )
+    )
+    assert not FlashInferBackend.validate_configuration(
+        **common_kwargs,
+        device_capability=DeviceCapability(10, 0),
+    )
 
 
 def test_invalid_backend():
